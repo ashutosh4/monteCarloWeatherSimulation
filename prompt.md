@@ -1,326 +1,330 @@
-You are an expert in ROCm, HIP, GPU programming, HPC Monte Carlo simulation,
-statistical validation, and scientific software engineering.
+You are an expert in ROCm, HIP, GPU programming, atmospheric modeling,
+Monte Carlo simulation, and scientific software engineering.
 
 Your task is to generate a complete, production-quality
-**Monte Carlo Weather Simulation and Analysis Test Application**
+**Monte Carlo Weather Simulation and Analysis Application**
 using ROCm.
 
-This application must simultaneously serve as:
-- A realistic Monte Carlo ensemble weather model
-- A comprehensive validation suite for rocRAND
-- A deep integration test for hipCUB
-- A fully parallel CPU + multi-GPU application
-- A statistically rigorous, CI-ready test harness
+This application must be written and presented as a
+realistic probabilistic weather modeling system,
+NOT as a synthetic test harness.
+
+However, the design must naturally and rigorously exercise:
+- rocRAND random number generation (all major distributions)
+- hipCUB parallel reductions, histograms, scans, and analysis
+- Deterministic, large-scale parallel execution on CPU + multi-GPU
 
 ====================================================
-1. PURPOSE
+1. APPLICATION INTENT & PHILOSOPHY
 ====================================================
 
-Build a Monte Carlo ensemble weather simulation that:
+The application models weather as an **uncertain, stochastic system**
+and uses **Monte Carlo ensemble simulation** to:
 
-- Exercises ALL rocRAND-supported distributions
-- Validates correctness under massive GPU parallelism
-- Uses hipCUB for all reductions, histograms, scans, and analysis
-- Produces probabilistic weather prediction products
-- Implements formal statistical PASS / FAIL criteria
-- Scales automatically across CPU cores and all available AMD GPUs
-- Is deterministic and reproducible with fixed seeds
+- Generate probabilistic weather forecasts
+- Quantify uncertainty, extremes, and risk
+- Analyze spatial and temporal structure
+- Produce prediction products used in real forecasting
 
-This is NOT a toy example.
-Treat it like an internal ROCm validation or research prototype.
+rocRAND and hipCUB MUST be used because the
+weather model *requires them*, not because they are being tested.
+
+Any validation of rocRAND or hipCUB must arise naturally
+from weather statistics, diagnostics, and prediction outputs.
 
 ====================================================
-2. HARDWARE PARALLELISM MODEL
+2. PARALLEL EXECUTION MODEL
 ====================================================
 
 CPU:
-- Detect CPU core count
-- Spawn threads using std::thread or OpenMP
+- Detect available CPU cores
+- Use std::thread or OpenMP
 - Partition ensemble members across CPU threads
 
 GPU:
 - Detect all AMD GPUs
-- Assign ensemble subsets to each GPU
+- Assign ensemble batches per GPU
 - One HIP stream per ensemble batch
-- Independent rocRAND states per GPU thread
-- Proper seed partitioning and skip-ahead/subsequence usage
+- Independent rocRAND streams per ensemble member
+- Deterministic seed partitioning across devices
+
+The application must scale automatically with hardware.
 
 ====================================================
-3. WEATHER MODEL & STATE
+3. WEATHER MODEL: STATE VARIABLES & PARAMETERS
 ====================================================
 
-Each ensemble member simulates a 2D atmospheric grid.
+Each ensemble member simulates a 2D atmospheric domain (Nx × Ny).
 
-Grid dimensions:
-- Nx × Ny (user configurable)
+----------------------------------------------------
+3.1 Core Atmospheric State (per grid cell)
+----------------------------------------------------
 
-Per-grid-cell state variables:
-- Temperature        : float
-- Pressure           : float
-- Humidity           : float
-- Wind velocity      : float2
-- Precipitation rate : float
-- Storm event count  : int
+- Temperature (float)
+- Pressure (float)
+- Air density (float)
+- Specific humidity (float)
+- Dew point temperature (float)
+- Wind velocity (float2: u, v)
+- Vertical velocity (float)
+- Vorticity (float)
+- Precipitation rate (float)
+- Cloud cover fraction (float)
+- Storm event count (int)
+
+----------------------------------------------------
+3.2 Surface & Boundary Parameters
+----------------------------------------------------
+
+- Surface elevation / topography
+- Land–sea mask
+- Surface roughness
+- Soil moisture (simplified)
+- Surface heat flux
+
+----------------------------------------------------
+3.3 Radiation & Energy Balance
+----------------------------------------------------
+
+- Incoming solar radiation
+- Longwave radiation loss
+- Albedo
+- Diurnal cycle parameters
+
+----------------------------------------------------
+3.4 Model Uncertainty & Sub-grid Processes
+----------------------------------------------------
+
+- Turbulence intensity
+- Diffusion coefficient uncertainty
+- Model bias term
+- Forcing uncertainty scale
+- Temporal correlation timescale
 
 ====================================================
-4. DISTRIBUTIONS USED (MANDATORY)
+4. STOCHASTIC PARAMETERIZATION (MANDATORY)
 ====================================================
 
-rocRAND distributions MUST be used as follows:
+The following rocRAND distributions MUST be used
+as part of realistic weather modeling:
 
 ----------------------------------------------------
-4.1 Initialization
+Initialization
 ----------------------------------------------------
 
-Temperature:
-- Normal(mean = base_temperature, stddev = temp_init_sigma)
+- Temperature, pressure, wind:
+  Normal distributions (physically motivated mean & variance)
 
-Pressure:
-- Normal(mean = base_pressure, stddev = pressure_init_sigma)
+- Humidity, cloud fraction:
+  Uniform distributions with bounds
 
-Humidity:
-- Uniform [0, 1]
-
-Wind (u, v):
-- Normal(0, wind_init_sigma)
+- Surface parameters:
+  Spatially heterogeneous random fields
 
 ----------------------------------------------------
-4.2 Time-Step Stochastic Forcing
+Time-evolving Stochastic Processes
 ----------------------------------------------------
 
-Turbulence forcing:
-- Normal (applied every timestep)
+- Turbulence forcing:
+  Normal, applied every timestep
 
-Precipitation intensity:
-- Lognormal (heavy-tailed behavior)
+- Precipitation intensity:
+  Lognormal (heavy-tailed behavior)
 
-Storm events:
-- Poisson(lambda = storm_rate)
+- Cloud microphysics events:
+  Poisson (discrete nucleation)
 
-Binary events (rain / no rain, warnings):
-- Bernoulli via Uniform + threshold
+- Rain / no-rain decisions:
+  Bernoulli (via uniform thresholding)
+
+- Rare extreme events:
+  Low-probability Poisson processes
 
 ----------------------------------------------------
-4.3 RNG REQUIREMENTS
+RNG Requirements
 ----------------------------------------------------
 
-- One independent RNG stream per ensemble member
-- Device-side rocRAND states
-- Deterministic replay with fixed seed
-- Multi-GPU independence guaranteed
+- One RNG stream per ensemble member
+- Device-side rocRAND state
+- Skip-ahead or subsequences for independence
+- Deterministic replay with fixed configuration
 
 ====================================================
 5. SIMULATION PHASE
 ====================================================
 
 Implement HIP kernels for:
+
 - Initialization
 - Time stepping
+- Advection & diffusion (simplified)
 - Stochastic forcing
-- State updates
+- Event injection (storms, precipitation bursts)
 
-Requirements:
-- Fully parallel kernels
-- No global synchronization
-- Structure-of-arrays (SoA) memory layout
+Kernels must be:
+- Fully parallel
+- SoA memory layout
+- Independent across ensemble members
 
 ====================================================
-6. ANALYSIS / PREDICTION PHASE (MANDATORY)
+6. ANALYSIS & PREDICTION PHASE
 ====================================================
 
-The analysis phase converts ensemble outputs into predictions.
+This phase converts ensemble outputs into **forecast products**.
 NO RNG usage is allowed here.
 
 ----------------------------------------------------
-6.1 Prediction Products
+6.1 Deterministic Forecast Products
 ----------------------------------------------------
 
-Compute:
 - Ensemble mean fields
 - Ensemble variance / standard deviation
+- Spatial gradients
+- Energy diagnostics
+
+----------------------------------------------------
+6.2 Probabilistic Forecast Products
+----------------------------------------------------
+
 - Probability of rain
-- Probability of extreme temperature
 - Probability of storm occurrence
-- Min / Max fields
-- Percentiles / quantiles
-- Spatial risk maps
-- Return periods
-
-====================================================
-7. HIPCUB FEATURES (MANDATORY)
-====================================================
+- Probability of extreme temperature
+- Probability of flooding
 
 ----------------------------------------------------
-7.1 Reductions
+6.3 Distribution-Based Diagnostics
 ----------------------------------------------------
 
-Use hipCUB::DeviceReduce to compute:
-- Means (accumulate in double)
+- Histograms of temperature, precipitation, humidity
+- Discrete histograms of storm counts
+- Shape, skewness, tail behavior
+
+----------------------------------------------------
+6.4 Quantiles & Extremes
+----------------------------------------------------
+
+- P05, P50, P95, P99
+- Spatial quantile maps
+- Extreme-value summaries
+
+----------------------------------------------------
+6.5 Risk & Return Periods
+----------------------------------------------------
+
+- Static return periods
+- Time-evolving return periods
+- Spatial return period maps
+- Peak-risk timing
+
+----------------------------------------------------
+6.6 Structure & Coherence Diagnostics
+----------------------------------------------------
+
+- Spatial correlation vs distance
+- Temporal autocorrelation
+- Spatio-temporal correlation
+- Optional spectral (FFT-based) analysis
+
+====================================================
+7. HIP-CUB USAGE (MANDATORY & NATURAL)
+====================================================
+
+hipCUB MUST be used because the weather analysis requires it:
+
+----------------------------------------------------
+Reductions
+----------------------------------------------------
+
+Use hipCUB::DeviceReduce for:
+- Means
 - Variances
 - Min / Max
 - Event counts
-- Exceedance counts
+- Exceedance probabilities
 
 ----------------------------------------------------
-7.2 Histograms
+Histograms
 ----------------------------------------------------
 
 Use hipCUB::DeviceHistogram for:
-- Temperature
-- Precipitation
-- Humidity
-- Poisson event counts
-- Bernoulli outcomes
+- Continuous variables
+- Discrete event counts
+- Quantile estimation via CDF
 
 ----------------------------------------------------
-7.3 Prefix Scan
+Prefix Scans
 ----------------------------------------------------
 
 Use hipCUB::DeviceScan for:
-- CDF computation
+- CDF construction
 - Cumulative precipitation
-- Event accumulation
-- Histogram-based quantiles
+- Time-evolving risk metrics
+
+----------------------------------------------------
+Verification
+----------------------------------------------------
+
+All hipCUB-derived results must be:
+- Cross-checked for consistency
+- Deterministic across runs
+- Numerically stable
 
 ====================================================
-8. PERCENTILE / QUANTILE ESTIMATION
+8. PARALLEL VERIFICATION & CONSISTENCY
 ====================================================
 
-Compute:
-- P05, P50, P95, P99
+The application must verify:
 
-For:
-- Temperature
-- Precipitation
-- Storm event counts
+- Statistical convergence with ensemble size
+- Independence across ensemble members
+- Reproducibility across CPU/GPU configurations
+- Stability over long simulation times
 
-Preferred method:
-- Histogram → CDF → threshold crossing
+Failures must be reported clearly.
 
 ====================================================
-9. SPATIAL QUANTILE MAPS
+9. OUTPUT & INTERPRETATION
 ====================================================
 
-For each grid cell (i, j), compute quantiles across ensemble members:
+The application must output:
 
-- Temperature: P05, P50, P95
-- Precipitation: P50, P95, P99
-- Storm events: P50, P95
-
-Must be:
-- Fully parallel
-- GPU-based
-- Documented clearly
-
-====================================================
-10. EXTREME-EVENT RETURN PERIOD ESTIMATION
-====================================================
-
-Return period:
-T = 1 / P(X >= threshold)
-
-Compute:
-- Scalar return periods
-- Spatial return period maps
-
-Thresholds:
-- Fixed physical thresholds
-- Percentile-based thresholds (e.g., P95, P99)
-
-====================================================
-11. TIME-EVOLVING RETURN PERIODS
-====================================================
-
-For each timestep t:
-- Compute exceedance probability
-- Compute return period T(t)
-
-Produce:
-- Return period vs time curves
-- Peak risk timing
-- Optional spatial snapshots
-
-====================================================
-12. SPATIAL CORRELATION ANALYSIS
-====================================================
-
-Compute correlation vs distance for:
-- Temperature
-- Precipitation
-- Storm events
-
-Method:
-- Compute ensemble anomalies
-- Distance-based binning
-- Covariance accumulation
-- Normalization
-
-PASS conditions:
-- corr(0) ≈ 1
-- Correlation decays with distance
-- No spatial artifacts
-
-====================================================
-13. FORMAL STATISTICAL PASS / FAIL CRITERIA
-====================================================
-
-Implement quantitative validation with hard thresholds.
-
-Tests MUST include:
-- Mean convergence (|error| ≤ 5σ/√N)
-- Variance error ≤ 10%
-- Histogram flatness (uniform)
-- Distribution shape checks (normal, lognormal, Poisson)
-- Stream independence (|corr| < 0.01)
-- Temporal autocorrelation (|lag-1| < 0.01)
-- Determinism (bitwise identical re-runs)
-
-Failures MUST:
-- Print detailed diagnostics
-- Exit with non-zero status
-
-====================================================
-14. OUTPUT REQUIREMENTS
-====================================================
-
-The application MUST output:
-- Summary tables
-- Histograms
-- Quantiles
+- Forecast summaries
+- Probability tables
+- Quantile values
 - Spatial maps
-- Return periods
-- PASS / FAIL status
+- Risk metrics
+- Correlation diagnostics
 
-Optional:
-- CSV dumps for inspection
-
-====================================================
-15. DOCUMENTATION (MANDATORY)
-====================================================
-
-Generate a long-form documentation section explaining:
-
-- Architecture
-- Parallelism strategy
-- rocRAND usage rationale
-- hipCUB usage rationale
-- Ensemble concept
-- Prediction vs simulation
-- Quantiles, correlation, return periods
-- Statistical interpretation
-
-ASCII diagrams are acceptable.
+Outputs may be printed and optionally exported as CSV.
 
 ====================================================
-16. BUILD & QUALITY BAR
+10. DOCUMENTATION (MANDATORY)
 ====================================================
 
-- Real, compilable HIP C++ (no pseudocode)
+Generate a detailed documentation section explaining:
+
+- How Monte Carlo weather simulation works
+- Meaning of ensemble, uncertainty, and probability
+- How stochastic weather processes map to rocRAND distributions
+- How forecast products require hipCUB primitives
+- Why histograms, reductions, scans, and correlations matter
+- How prediction differs from deterministic simulation
+- How GPU parallelism enables large ensembles
+
+Documentation must read like:
+- A scientific software guide
+- NOT a library test description
+
+====================================================
+11. BUILD & QUALITY BAR
+====================================================
+
+- Real, compilable HIP C++
 - CMake build for ROCm
-- Modular, readable, deterministic
+- Modular, readable code
 - Written for advanced GPU developers
+- Production-quality structure
 
 ====================================================
 GENERATE THE COMPLETE SOLUTION NOW.
 ====================================================
-
